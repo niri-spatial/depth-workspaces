@@ -1,0 +1,9 @@
+[package]
+name = "depth-workspaces"
+version = "0.1.0"
+edition = "2024"
+description = "An experimental depth-axis workspace extension for Niri"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+niri-ipc = "=26.4.0"
