@@ -28,10 +28,17 @@ fn run() -> Result<(), Box<dyn Error>> {
 
             unset_workspace_name(z, y)
         }
+        [command, z, y] if command == "adopt-current" => {
+            let z = z.parse::<i32>()?;
+            let y = y.parse::<i32>()?;
+
+            adopt_current_workspace(z, y)
+        }
         _ => {
             println!("Usage:");
             println!("  workspace-label set <workspace-id> <z> <y>");
             println!("  workspace-label unset <z> <y>");
+            println!("  workspace-label adopt-current <z> <y>");
             Ok(())
         }
     }
@@ -120,6 +127,73 @@ fn set_workspace_name(workspace_id: u64, z: i32, y: i32) -> Result<(), Box<dyn E
     println!("Name: {}", name);
     println!("Current ID: {}", named.id);
     println!("Current index: {}", named.idx);
+
+    Ok(())
+}
+
+/// 現在フォーカスしているワークスペースを3D空間に登録する
+fn adopt_current_workspace(z: i32, y: i32) -> Result<(), Box<dyn Error>> {
+    let mut socket = Socket::connect()?;
+    let workspaces = get_workspaces(&mut socket)?;
+
+    let name = encode(z, y);
+
+    // 現在フォーカスしているワークスペースを取得
+    let target = workspaces
+        .iter()
+        .find(|workspace| workspace.is_focused)
+        .ok_or_else(|| io::Error::other("Focused workspace was not found."))?;
+
+    let workspace_id = target.id;
+
+    // すでに同じ座標なら何もしない
+    if target.name.as_deref() == Some(name.as_str()) {
+        println!("Workspace is already registered.");
+        return Ok(());
+    }
+
+    // 既存の名前を上書きしない
+    if let Some(existing_name) = &target.name {
+        return Err(io::Error::other(format!(
+            "Focused workspace already has a name: {existing_name}"
+        ))
+        .into());
+    }
+
+    // 同じ座標の重複を防止
+    if let Some(existing) = workspaces
+        .iter()
+        .find(|workspace| workspace.name.as_deref() == Some(name.as_str()))
+    {
+        return Err(io::Error::other(format!(
+            "Coordinate already exists on workspace ID {}.",
+            existing.id
+        ))
+        .into());
+    }
+
+    println!("Adopting focused workspace ID {workspace_id} as ({z}, {y})");
+
+    // 現在のワークスペースに名前を設定
+    send_action(
+        &mut socket,
+        Action::SetWorkspaceName {
+            name: name.clone(),
+            workspace: Some(WorkspaceReferenceArg::Id(workspace_id)),
+        },
+    )?;
+
+    // 設定結果を確認
+    let updated = get_workspaces(&mut socket)?;
+
+    let named = updated
+        .iter()
+        .find(|workspace| workspace.name.as_deref() == Some(name.as_str()))
+        .ok_or_else(|| io::Error::other("Workspace registration failed."))?;
+
+    println!("Workspace registered successfully.");
+    println!("Name: {}", name);
+    println!("Current ID: {}", named.id);
 
     Ok(())
 }
